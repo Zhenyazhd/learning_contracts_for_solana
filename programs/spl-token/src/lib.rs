@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
-    token::{mint_to, Mint, MintTo, Token, TokenAccount},
+    token::{mint_to, Mint, MintTo, Token, TokenAccount, transfer, Transfer, burn, Burn, approve, Approve},
     metadata::{
         create_metadata_accounts_v3,
         mpl_token_metadata::types::DataV2,
@@ -9,7 +9,7 @@ use anchor_spl::{
         Metadata as Metaplex,
     },
 };
-
+// https://docs.rs/anchor-spl/latest/anchor_spl/token/struct.Approve.html
 
 declare_id!("CqBx2Ce1MijhXcASX7rsb9knaPhmPe2N5HWYVaQVR8zt");
 
@@ -17,15 +17,6 @@ declare_id!("CqBx2Ce1MijhXcASX7rsb9knaPhmPe2N5HWYVaQVR8zt");
 mod token_minter {
     use super::*;
     pub fn init_token(ctx: Context<InitToken>, metadata: InitTokenParams ) -> Result<()> {
-        msg!("🚀 INIT_TOKEN STARTED");
-        msg!("Metadata name: {}", metadata.name);
-        msg!("Metadata symbol: {}", metadata.symbol);
-        msg!("Metadata URI: {}", metadata.uri);
-        msg!("Metadata decimals: {}", metadata.decimals);
-
-        msg!("Mint Account: {:?}", ctx.accounts.mint.key());
-        msg!("Metadata Account: {:?}", ctx.accounts.metadata.key());
-        msg!("Payer Account: {:?}", ctx.accounts.payer.key());
         let seeds = &["mint".as_bytes(), &[ctx.bumps.mint]];
         let signer = [&seeds[..]];
 
@@ -85,6 +76,62 @@ mod token_minter {
 
         Ok(())
     }
+
+    pub fn transfer_tokens(ctx: Context<TransferTokens>, amount: u64) -> Result<()> {        
+        require!(
+            ctx.accounts.from.amount >= amount,
+            CustomError::InsufficientFunds
+        );
+        transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Transfer {
+                    from: ctx.accounts.from.to_account_info(),
+                    to: ctx.accounts.to.to_account_info(),
+                    authority: ctx.accounts.owner.to_account_info(),
+                },
+            ),
+            amount,
+        )?;
+
+        msg!("✅ Transfer completed");
+        Ok(())
+    }
+
+    pub fn burn_tokens(ctx: Context<BurnTokens>, quantity: u64) -> Result<()> {
+        require!(
+            ctx.accounts.from.amount >= quantity,
+            CustomError::InsufficientFunds
+        );
+        burn(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Burn{
+                    mint: ctx.accounts.mint.to_account_info(),
+                    from: ctx.accounts.from.to_account_info(),
+                    authority: ctx.accounts.owner.to_account_info(),
+                },
+            ),
+            quantity,
+        )?;
+
+        Ok(())
+    }
+
+    pub fn approve_tokens(ctx: Context<ApproveTokens>, quantity: u64) -> Result<()> {
+        approve(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                Approve {
+                    to: ctx.accounts.to.to_account_info(), 
+                    delegate: ctx.accounts.delegate.to_account_info(),
+                    authority: ctx.accounts.owner.to_account_info(), 
+                },
+            ),
+            quantity, 
+        )?;
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -106,7 +153,7 @@ pub struct InitToken<'info> {
     pub payer: Signer<'info>,
     pub rent: Sysvar<'info, Rent>,
     pub system_program: Program<'info, System>,
-     pub token_program: Program<'info, Token>,
+    pub token_program: Program<'info, Token>,
     pub token_metadata_program: Program<'info, Metaplex>,
 }
 
@@ -136,10 +183,54 @@ pub struct MintTokens<'info> {
     pub associated_token_program: Program<'info, AssociatedToken>,
 }
 
+#[derive(Accounts)]
+pub struct TransferTokens<'info> {
+    #[account(mut)]
+    pub from: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub to: Account<'info, TokenAccount>,
+    pub owner: Signer<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+
+#[derive(Accounts)]
+pub struct BurnTokens<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub from: Account<'info, TokenAccount>,
+    #[account(mut)]
+    pub mint: Account<'info, Mint>, 
+
+    pub token_program: Program<'info, Token>,
+}
+
+
+#[derive(Accounts)]
+pub struct ApproveTokens<'info> {
+    #[account(mut)]
+    pub owner: Signer<'info>,
+    #[account(mut)]
+    pub to: Account<'info, TokenAccount>, 
+    #[account(mut)]
+    /// CHECK: Этот аккаунт является просто публичным ключом, используемым как делегат, поэтому проверка не требуется.
+    pub delegate: UncheckedAccount<'info>,
+    pub token_program: Program<'info, Token>,
+}
+
+
 #[derive(AnchorSerialize, AnchorDeserialize, Debug, Clone)]
 pub struct InitTokenParams {
     pub name: String,
     pub symbol: String,
     pub uri: String,
     pub decimals: u8,
+}
+
+
+#[error_code]
+pub enum CustomError {
+    #[msg("Insufficient funds")]
+    InsufficientFunds,
 }
