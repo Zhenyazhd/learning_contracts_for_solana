@@ -51,9 +51,6 @@ mod token_minter {
             true,
             None,
         )?;
-
-        msg!("Token mint created successfully.");
-
         Ok(())
     }
 
@@ -94,7 +91,6 @@ mod token_minter {
             amount,
         )?;
 
-        msg!("✅ Transfer completed");
         Ok(())
     }
 
@@ -214,7 +210,6 @@ pub struct ApproveTokens<'info> {
     #[account(mut)]
     pub to: Account<'info, TokenAccount>, 
     #[account(mut)]
-    /// CHECK: Этот аккаунт является просто публичным ключом, используемым как делегат, поэтому проверка не требуется.
     pub delegate: UncheckedAccount<'info>,
     pub token_program: Program<'info, Token>,
 }
